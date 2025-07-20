@@ -28,20 +28,48 @@ import core.stdc.string : strcmp;
 // A simple file‐backed vector in betterC mode
 extern (C)
 struct MemMapVector(T)
-{
+{    
+    struct State{
+        size_t length;
+        size_t capacity;  // in elements T
+    }
+
+    private: 
+    
+    State* state = null;
     int fd = -1;
-    T*  data;
-    size_t length;
-    size_t capacity;  // in elements
+
+    @property ref size_t length(){
+        assert(state!=null);
+        return state.length;
+    }
+
+    @property ref size_t capacity(){
+        assert(state!=null);
+        return state.capacity;
+    }
+
+    @property T* data(){
+        assert(state!=null);
+        return cast(T*)( cast(ubyte*)(state) + State.sizeof + ((State.sizeof%T.sizeof==0)?0:(T.sizeof-State.sizeof%T.sizeof)));
+    }
+
+    public:
+    
+    @property ref const(size_t) length() const{
+        assert(state!=null);
+        return state.length;
+    }
+
+    @property ref const(size_t) capacity() const{
+        assert(state!=null);
+        return state.capacity;
+    }
 
     /// Initialize: open (or create) file and map an initial region
-    this(immutable char* path, size_t reserve)
+    this(immutable char* path, size_t initialCapacity)
     {
-        capacity = reserve==0?1:reserve;
-        length   = 0;
-
-        bool anon = strcmp(path,"")==0;
-
+        bool anon = path==cast(char*)null;
         if(!anon){
             // Open or create the file for read/write; truncate to zero
             fd = open(path, O_RDWR | O_CREAT, 0x1A4 /*0644*/);
@@ -51,59 +79,34 @@ struct MemMapVector(T)
                 assert(false);
             }
         }
-        
-        // Ensure the file is at least initialCapacity * sizeof(T)
-        auto bytes = capacity * T.sizeof;
-        if (ftruncate(fd, cast(ulong)bytes) != 0)
-        {
-            perror("ftruncate");
-            close(fd);
-            assert(false);
-        }
 
-        // mmap the file
-        if(capacity != 0) {
-            data = cast(T*) mmap(null, bytes,
-                            PROT_READ | PROT_WRITE,
-                            MAP_SHARED | (anon?MAP_ANON:0),
-                            fd, 0);
-
-            if (data == cast(T*)MAP_FAILED)
-            {
-                perror("mmap");
-                printf("%d ...\n",errno);
-                close(fd);
-                assert(false);
-            }
-        }
-
+        reserve(initialCapacity);
     }
 
     /// Clean up: unmap and close
     ~this()
     {
-        if (data !is null && capacity > 0)
+        if (state !is null)
         {
-            munmap(data, capacity * T.sizeof);
-            data = null;
+            munmap(state, fullSize(capacity));
+            state = null;
         }
         if (fd >= 0)
         {
             close(fd);
             fd = -1;
         }
-        length = capacity = 0;
     }
 
-    /// Reserve at least newCapacity elements
-    int reserve(size_t newCapacity)
-    {
-        if (newCapacity <= capacity)
-            return 0;
+    size_t fullSize(size_t newCapacity){
+        return State.sizeof + ((State.sizeof%T.sizeof==0)?0:(T.sizeof-State.sizeof%T.sizeof)) + newCapacity*T.sizeof;
+    }
 
+    private int first_reserve(size_t newCapacity)
+    {
         if (fd >=0 ){
             // Extend the underlying file
-            auto newBytes = newCapacity * T.sizeof;
+            auto newBytes = fullSize(newCapacity);
             if (ftruncate(fd, cast(ulong)newBytes) != 0)
             {
                 perror("ftruncate");
@@ -111,41 +114,63 @@ struct MemMapVector(T)
             }
 
         }
+        
+        state = cast(State*) mmap(null, fullSize(newCapacity),
+                        PROT_READ | PROT_WRITE,
+                        MAP_SHARED | (fd<0?MAP_ANON:0),
+                        fd, 0);
 
-        if(capacity==0){
-            capacity = newCapacity;
-            data = cast(T*) mmap(null, capacity * T.sizeof,
-                            PROT_READ | PROT_WRITE,
-                            MAP_SHARED | (fd<0?MAP_ANON:0),
-                            fd, 0);
-
-            if (data == cast(T*)MAP_FAILED)
-            {
-                perror("mmap");
-                printf("%d ...\n",errno);
-                close(fd);
-                assert(false);
-            }
+        if (state == cast(State*)MAP_FAILED)
+        {
+            perror("mmap");
+            close(fd);
+            assert(false);
         }
-        else{
-            T* newdata = cast(T*) mremap(data,capacity * T.sizeof, newCapacity * T.sizeof, MREMAP_MAYMOVE);
-            if (newdata == MAP_FAILED) {
-                perror("mremap");
-                destroy(this);
+
+        capacity = newCapacity;
+        length   = 0; 
+               
+        return 0;
+    }
+
+    /// Reserve at least newCapacity elements
+    int reserve(size_t newCapacity)
+    {
+        if(state==null){
+            State tmp = {0,0};
+            state=&tmp;
+            return first_reserve(newCapacity);
+        }
+
+        auto newBytes = fullSize(newCapacity);
+
+        if (fd >=0 ){
+            // Extend the underlying file
+            if (ftruncate(fd, cast(ulong)newBytes) != 0)
+            {
+                perror("ftruncate");
                 return -1;
             }
-            else{
-                data=newdata;
-                capacity = newCapacity;
-            }
+
+        }
+        State* newState = cast(State*) mremap(state,fullSize(capacity), newBytes, MREMAP_MAYMOVE);
+        if (newState == MAP_FAILED) {
+            perror("mremap");
+            destroy(this);
+            return -1;
+        }
+        else{
+            state = newState;
+            capacity = newCapacity;
         }
         
         return 0;
     }
 
     /// Append one element (copy)
-    int pushBack(T value)
+    int pushBack(ref const(T) value)
     {
+        printf("%ld %ld\n", length, capacity);
         // Grow (doubling strategy)
         if (length + 1 > capacity)
         {
@@ -153,13 +178,16 @@ struct MemMapVector(T)
             if (reserve(newCap) != 0)
                 return -1;
         }
+        
         data[length++] = value;
+
         return 0;
     }
 
     /// Indexing
     ref T opIndex(size_t idx) @system
     {
+        assert(idx<length);
         // No bounds check in betterC
         return data[idx];
     }

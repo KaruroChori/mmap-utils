@@ -1,12 +1,13 @@
 .dub
 docs.json
 __dummy.html
+/__dummy_docs/
 docs/
 /testing
 testing.so
 testing.dylib
 testing.dll
-testing.a
+libtesting.a
 testing.lib
 testing-test-*
 *.exe
@@ -14,3 +15,4 @@ testing-test-*
 *.o
 *.obj
 *.lst
+/tmp
