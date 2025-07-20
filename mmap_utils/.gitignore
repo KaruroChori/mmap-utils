@@ -1,0 +1,16 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/mmap-lib
+mmap-lib.so
+mmap-lib.dylib
+mmap-lib.dll
+mmap-lib.a
+mmap-lib.lib
+mmap-lib-test-*
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst

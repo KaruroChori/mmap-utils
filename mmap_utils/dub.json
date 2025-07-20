@@ -1,0 +1,10 @@
+{
+	"authors": [
+		"Karuro Chari"
+	],
+	"copyright": "Copyright © 2025, Karuro Chari",
+	"description": "Template library for memory mapped containers and utils",
+	"license": "LGPL-3.0-only",
+	"name": "mmap-utils",
+	"dflags": ["-betterC", "-oq"]
+}

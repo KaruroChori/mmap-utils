@@ -1,0 +1,18 @@
+{
+	"authors": [
+		"Karuro Chari"
+	],
+	"copyright": "Copyright © 2025, Karuro Chari",
+	"description": "Testing for the library",
+	"license": "GPL-3.0-only",
+	"name": "testing",
+	"dflags": [
+		"-betterC",
+		"-oq"
+	],
+	"dependencies": {
+		"mmap-utils": {
+			"path": "../mmap_utils"
+		}
+	}
+}
