@@ -25,6 +25,9 @@ import core.sys.posix.unistd : close, ftruncate;
 
 import core.stdc.string : strcmp;
 
+import core.sys.posix.sys.types;
+import core.sys.posix.sys.stat: fstat, stat_t;
+
 // A simple file‐backed vector in betterC mode
 extern (C)
 struct MemMapVector(T)
@@ -38,6 +41,7 @@ struct MemMapVector(T)
     
     State* state = null;
     int fd = -1;
+    bool preserve;
 
     @property ref size_t length(){
         assert(state!=null);
@@ -67,9 +71,11 @@ struct MemMapVector(T)
     }
 
     /// Initialize: open (or create) file and map an initial region
-    this(immutable char* path, size_t initialCapacity)
+    this(immutable char* path, size_t initialCapacity, bool preserve=false)
     {
         bool anon = path==cast(char*)null;
+        this.preserve=preserve;
+        
         if(!anon){
             // Open or create the file for read/write; truncate to zero
             fd = open(path, O_RDWR | O_CREAT, 0x1A4 /*0644*/);
@@ -104,6 +110,33 @@ struct MemMapVector(T)
 
     private int first_reserve(size_t newCapacity)
     {
+        if(preserve==true && fd>=0){
+
+            long getSizeByStat()
+            {
+                stat_t st;
+                if (fstat(fd, &st) != 0)
+                {
+                    perror("stat");
+                    return -1;
+                }
+                return cast(long)st.st_size;
+            }
+
+            state = cast(State*) mmap(null, getSizeByStat(),
+                PROT_READ | PROT_WRITE,
+                MAP_SHARED | (fd<0?MAP_ANON:0),
+                fd, 0);
+
+            if (state == cast(State*)MAP_FAILED)
+            {
+                perror("mmap");
+                close(fd);
+                return -1;
+            }
+            return 0;
+        }
+
         if (fd >=0 ){
             // Extend the underlying file
             auto newBytes = fullSize(newCapacity);
@@ -124,7 +157,7 @@ struct MemMapVector(T)
         {
             perror("mmap");
             close(fd);
-            assert(false);
+            return -1;
         }
 
         capacity = newCapacity;

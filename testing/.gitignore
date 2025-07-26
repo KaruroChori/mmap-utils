@@ -15,4 +15,5 @@ testing-test-*
 *.o
 *.obj
 *.lst
-/tmp
+/tmp/*
+!/tmp/.keep

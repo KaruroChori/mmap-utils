@@ -5,11 +5,11 @@ import mmap_utils.vector;
 extern(C) void main()
 {
 	{
-		MemMapVector!int qa = MemMapVector!int("./tmp/banana.bin",0);
+		MemMapVector!int qa = MemMapVector!int("./tmp/banana.bin",0,true);
 		for(int i = 0 ; i<30; i++){
 			qa.pushBack(i);
 		}
-		qa[20] = 105;
+		qa[20] = qa[20]+105;
 
 		for(int i = 0 ; i<30; i++){
 			printf("%d ",qa[i]);
